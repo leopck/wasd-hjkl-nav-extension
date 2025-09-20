@@ -1,144 +1,265 @@
 (async () => {
-  const { sites = [], modes = [] } = await chrome.storage.sync.get(['sites', 'modes']);
+  // Load all user settings
+  const config = await chrome.storage.sync.get([
+    'sites', 'modes',
+    'behaviorSmooth', 'behaviorPageJump',
+    'behaviorEdgePadding', 'behaviorHorizontal',
+    'pageJumpOverlap'
+  ]);
+
+  const {
+    sites = [],
+    modes = [],
+    behaviorSmooth = true,
+    behaviorPageJump = false,
+    behaviorEdgePadding = false,
+    behaviorHorizontal = true,
+    pageJumpOverlap = 10 // default 10% overlap
+  } = config;
+
   const hostname = window.location.hostname;
 
-  if (!sites.some(site => hostname === site || hostname.endsWith('.' + site))) {
+  // Check if current site is enabled
+  const isSiteEnabled = sites.some(site =>
+    hostname === site || hostname.endsWith('.' + site)
+  );
+
+  if (!isSiteEnabled) {
     console.log('[WASD/HJKL EXT] Site not matched, skipping:', hostname);
     return;
   }
 
   console.log('[WASD/HJKL EXT] Matched site:', hostname);
-  console.log('[WASD/HJKL EXT] Enabled modes:', modes);
+  console.log('[WASD/HJKL EXT] Config:', config);
 
-  const scrollKeys = {
-    wasd: { w: [0, -1], s: [0, 1] },
-    hjkl: { k: [0, -1], j: [0, 1] }
-  };
-
-  // Combine vertical scroll keys from both modes
-  const verticalKeys = {};
-  modes.forEach(mode => {
-    if (scrollKeys[mode]) {
-      Object.assign(verticalKeys, scrollKeys[mode]);
+  // ===== KEY MAPPINGS =====
+  const scrollKeys = {};
+  if (modes.includes('wasd')) {
+    scrollKeys['w'] = [0, -1]; // up
+    scrollKeys['s'] = [0, 1];  // down
+    if (behaviorHorizontal) {
+      scrollKeys['a'] = 'ArrowLeft';
+      scrollKeys['d'] = 'ArrowRight';
     }
-  });
+  }
+  if (modes.includes('hjkl')) {
+    scrollKeys['k'] = [0, -1]; // up
+    scrollKeys['j'] = [0, 1];  // down
+    if (behaviorHorizontal) {
+      scrollKeys['h'] = 'ArrowLeft';
+      scrollKeys['l'] = 'ArrowRight';
+    }
+  }
 
-  // Smooth scrolling state
-  const scrollState = {
+  // ===== HELPER: Get scroll boundaries with optional padding =====
+  function getScrollLimits() {
+    const padding = behaviorEdgePadding ? window.innerHeight * 0.05 : 0; // 5% padding
+    return {
+      maxScrollY: Math.max(0, document.documentElement.scrollHeight - window.innerHeight - padding),
+      minScrollY: padding
+    };
+  }
+
+  // Clamp scroll position to respect padding
+  function clampScroll() {
+    const { minScrollY, maxScrollY } = getScrollLimits();
+    let y = window.scrollY;
+
+    if (y < minScrollY) window.scrollTo(window.scrollX, minScrollY);
+    else if (y > maxScrollY) window.scrollTo(window.scrollX, maxScrollY);
+  }
+
+  // ===== PAGE JUMP ENGINE =====
+  const pressedJumpKeys = new Set();
+
+  function handlePageJump(key) {
+    if (pressedJumpKeys.has(key)) return; // debounce: prevent multiple jumps while holding
+    pressedJumpKeys.add(key);
+
+    const direction = scrollKeys[key];
+    if (!Array.isArray(direction)) return;
+
+    // Calculate scroll amount with overlap
+    const overlapRatio = Math.min(1, Math.max(0, (pageJumpOverlap || 10) / 100)); // clamp 0-100%
+    const effectiveHeight = window.innerHeight * (1 - overlapRatio); // e.g., 90% if overlap=10%
+
+    const scrollAmount = direction[1] * effectiveHeight;
+    let targetY = window.scrollY + scrollAmount;
+
+    // Apply edge padding if enabled
+    if (behaviorEdgePadding) {
+      const { minScrollY, maxScrollY } = getScrollLimits();
+      targetY = Math.min(Math.max(targetY, minScrollY), maxScrollY);
+    } else {
+      // Basic document bounds clamp
+      const maxScrollY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      targetY = Math.min(Math.max(targetY, 0), maxScrollY);
+    }
+
+    // Animate scroll
+    window.scrollTo({
+      top: targetY,
+      behavior: 'smooth'
+    });
+  }
+
+  // ===== SMOOTH SCROLLING ENGINE =====
+  const smoothScrollState = {
     velocity: { x: 0, y: 0 },
     isScrolling: false,
     keys: new Set(),
     animationId: null
   };
 
-  // Configuration
-  const config = {
-    acceleration: 0.5,    // How quickly speed builds up
-    maxSpeed: 20,         // Maximum scroll speed
-    friction: 0.9,        // How quickly scrolling stops (0.9 = smooth, 0.7 = quick stop)
-    threshold: 0.1        // Minimum velocity before stopping
+  const smoothConfig = {
+    acceleration: 0.7,
+    maxSpeed: 25,
+    friction: 0.88,
+    threshold: 0.15
   };
 
   function updateVelocity() {
-    // Apply acceleration based on pressed keys
-    scrollState.keys.forEach(key => {
-      const move = verticalKeys[key];
-      if (move) {
-        scrollState.velocity.x += move[0] * config.acceleration;
-        scrollState.velocity.y += move[1] * config.acceleration;
+    smoothScrollState.keys.forEach(key => {
+      const move = scrollKeys[key];
+      if (Array.isArray(move)) {
+        smoothScrollState.velocity.x += move[0] * smoothConfig.acceleration;
+        smoothScrollState.velocity.y += move[1] * smoothConfig.acceleration;
       }
     });
 
-    // Cap maximum speed
-    const speed = Math.sqrt(scrollState.velocity.x ** 2 + scrollState.velocity.y ** 2);
-    if (speed > config.maxSpeed) {
-      const scale = config.maxSpeed / speed;
-      scrollState.velocity.x *= scale;
-      scrollState.velocity.y *= scale;
+    // Cap speed
+    const speed = Math.hypot(smoothScrollState.velocity.x, smoothScrollState.velocity.y);
+    if (speed > smoothConfig.maxSpeed) {
+      const scale = smoothConfig.maxSpeed / speed;
+      smoothScrollState.velocity.x *= scale;
+      smoothScrollState.velocity.y *= scale;
     }
   }
 
-  function animateScroll() {
-    if (scrollState.keys.size > 0) {
+  function animateSmoothScroll() {
+    if (smoothScrollState.keys.size > 0) {
       updateVelocity();
     } else {
-      // Apply friction when no keys pressed
-      scrollState.velocity.x *= config.friction;
-      scrollState.velocity.y *= config.friction;
+      smoothScrollState.velocity.x *= smoothConfig.friction;
+      smoothScrollState.velocity.y *= smoothConfig.friction;
     }
 
-    // Stop if velocity is too small
-    if (Math.abs(scrollState.velocity.x) < config.threshold && 
-        Math.abs(scrollState.velocity.y) < config.threshold && 
-        scrollState.keys.size === 0) {
-      scrollState.velocity.x = 0;
-      scrollState.velocity.y = 0;
-      scrollState.isScrolling = false;
-      cancelAnimationFrame(scrollState.animationId);
+    // Stop if negligible
+    if (Math.abs(smoothScrollState.velocity.x) < smoothConfig.threshold &&
+        Math.abs(smoothScrollState.velocity.y) < smoothConfig.threshold &&
+        smoothScrollState.keys.size === 0) {
+      smoothScrollState.velocity.x = 0;
+      smoothScrollState.velocity.y = 0;
+      smoothScrollState.isScrolling = false;
+      cancelAnimationFrame(smoothScrollState.animationId);
       return;
     }
 
-    // Apply the scroll
-    window.scrollBy(scrollState.velocity.x, scrollState.velocity.y);
+    window.scrollBy(smoothScrollState.velocity.x, smoothScrollState.velocity.y);
 
-    // Continue animation
-    scrollState.animationId = requestAnimationFrame(animateScroll);
+    // Apply edge padding during smooth scroll
+    if (behaviorEdgePadding) {
+      clampScroll();
+    }
+
+    smoothScrollState.animationId = requestAnimationFrame(animateSmoothScroll);
   }
 
-  function startScrolling() {
-    if (!scrollState.isScrolling) {
-      scrollState.isScrolling = true;
-      animateScroll();
+  function startSmoothScrolling() {
+    if (!smoothScrollState.isScrolling) {
+      smoothScrollState.isScrolling = true;
+      animateSmoothScroll();
     }
   }
 
-  document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)
-      return;
-
-    // Trigger real arrow keys for horizontal navigation
-    if (modes.includes('wasd') && e.key === 'a' || modes.includes('hjkl') && e.key === 'h') {
-      e.preventDefault();
-      document.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'ArrowLeft',
-        code: 'ArrowLeft',
-        keyCode: 37,
-        which: 37,
-        bubbles: true
-      }));
+  // ===== EVENT HANDLERS =====
+  function handleKeyDown(e) {
+    // Ignore if typing in input field
+    if (e.target.tagName === 'INPUT' || 
+        e.target.tagName === 'TEXTAREA' || 
+        e.target.isContentEditable) {
       return;
     }
 
-    if (modes.includes('wasd') && e.key === 'd' || modes.includes('hjkl') && e.key === 'l') {
+    const action = scrollKeys[e.key.toLowerCase()];
+    if (!action) return;
+
+    // === HANDLE ARROW KEYS (A/D/H/L → ArrowLeft/ArrowRight) ===
+    if (typeof action === 'string') {
       e.preventDefault();
-      document.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'ArrowRight',
-        code: 'ArrowRight',
-        keyCode: 39,
-        which: 39,
-        bubbles: true
-      }));
+      e.stopPropagation(); // Prevent site from handling original key
+
+      const arrowKey = action; // "ArrowLeft" or "ArrowRight"
+      const keyCode = arrowKey === 'ArrowLeft' ? 37 : 39;
+
+      // Create and dispatch keydown
+      const keydownEvent = new KeyboardEvent('keydown', {
+        key: arrowKey,
+        code: arrowKey,
+        keyCode: keyCode,
+        which: keyCode,
+        bubbles: true,
+        cancelable: true
+      });
+      document.dispatchEvent(keydownEvent);
+
+      // Dispatch keyup after a tiny delay (mimic real key press)
+      setTimeout(() => {
+        const keyupEvent = new KeyboardEvent('keyup', {
+          key: arrowKey,
+          code: arrowKey,
+          keyCode: keyCode,
+          which: keyCode,
+          bubbles: true,
+          cancelable: true
+        });
+        document.dispatchEvent(keyupEvent);
+      }, 50); // 50ms delay — feels natural
+
       return;
     }
 
-    // Handle vertical scrolling
-    if (verticalKeys[e.key] && !scrollState.keys.has(e.key)) {
-      e.preventDefault();
-      scrollState.keys.add(e.key);
-      startScrolling();
-    }
-  });
+    // === HANDLE SCROLL KEYS (W/S/K/J) ===
+    e.preventDefault();
 
-  document.addEventListener('keyup', (e) => {
-    if (verticalKeys[e.key]) {
-      scrollState.keys.delete(e.key);
+    // Page Jump Mode
+    if (behaviorPageJump) {
+      handlePageJump(e.key.toLowerCase());
     }
-  });
 
-  // Clean up on page unload
+    // Smooth Mode
+    if (behaviorSmooth) {
+      const key = e.key.toLowerCase();
+      if (!smoothScrollState.keys.has(key)) {
+        smoothScrollState.keys.add(key);
+        startSmoothScrolling();
+      }
+    }
+  }
+
+  function handleKeyUp(e) {
+    const key = e.key.toLowerCase();
+    pressedJumpKeys.delete(key); // release jump key
+
+    if (behaviorSmooth) {
+      smoothScrollState.keys.delete(key); // release smooth key
+    }
+  }
+
+  // ===== INIT & CLEANUP =====
+  document.addEventListener('keydown', handleKeyDown);
+  document.addEventListener('keyup', handleKeyUp);
+
+  // Cleanup on page unload
   window.addEventListener('beforeunload', () => {
-    if (scrollState.animationId) {
-      cancelAnimationFrame(scrollState.animationId);
+    if (smoothScrollState.animationId) {
+      cancelAnimationFrame(smoothScrollState.animationId);
     }
   });
+
+  // Initial clamp if edge padding is on
+  if (behaviorEdgePadding) {
+    clampScroll();
+  }
+
 })();
