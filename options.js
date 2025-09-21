@@ -6,7 +6,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     behaviorPageJump = false,
     behaviorEdgePadding = false,
     behaviorHorizontal = true,
-    pageJumpOverlap = 10
+    pageJumpOverlap = 10,
+    smoothAcceleration = 0.7,
+    smoothMaxSpeed = 25
   } = await chrome.storage.sync.get([
     'sites',
     'modes',
@@ -14,7 +16,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     'behaviorPageJump',
     'behaviorEdgePadding',
     'behaviorHorizontal',
-    'pageJumpOverlap'
+    'pageJumpOverlap',
+    'smoothAcceleration',
+    'smoothMaxSpeed'
   ]);
 
   // Populate sites
@@ -30,16 +34,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('behavior-edgepadding').checked = behaviorEdgePadding;
   document.getElementById('behavior-horizontal').checked = behaviorHorizontal;
 
-  // Populate overlap slider
-  const slider = document.getElementById('overlap-slider');
-  const valueDisplay = document.getElementById('overlap-value');
-  slider.value = pageJumpOverlap;
-  valueDisplay.textContent = pageJumpOverlap + '%';
+  // Helper to setup slider + display
+  function setupSlider(sliderId, valueId, value, unit = '') {
+    const slider = document.getElementById(sliderId);
+    const display = document.getElementById(valueId);
+    slider.value = value;
+    display.textContent = value + unit;
 
-  // Update display when slider moves
-  slider.addEventListener('input', () => {
-    valueDisplay.textContent = slider.value + '%';
-  });
+    slider.addEventListener('input', () => {
+      display.textContent = slider.value + unit;
+    });
+  }
+
+  // Setup all sliders
+  setupSlider('overlap-slider', 'overlap-value', pageJumpOverlap, '%');
+  setupSlider('acceleration-slider', 'acceleration-value', smoothAcceleration);
+  setupSlider('speed-slider', 'speed-value', smoothMaxSpeed);
+
 });
 
 document.getElementById('save').addEventListener('click', () => {
@@ -61,7 +72,7 @@ document.getElementById('save').addEventListener('click', () => {
           return null;
         }
       })
-      .filter(Boolean) // remove nulls
+      .filter(Boolean)
   );
 
   // Collect selected modes
@@ -77,7 +88,9 @@ document.getElementById('save').addEventListener('click', () => {
     behaviorPageJump: document.getElementById('behavior-pagejump').checked,
     behaviorEdgePadding: document.getElementById('behavior-edgepadding').checked,
     behaviorHorizontal: document.getElementById('behavior-horizontal').checked,
-    pageJumpOverlap: parseInt(document.getElementById('overlap-slider').value, 10)
+    pageJumpOverlap: parseInt(document.getElementById('overlap-slider').value, 10),
+    smoothAcceleration: parseFloat(document.getElementById('acceleration-slider').value),
+    smoothMaxSpeed: parseInt(document.getElementById('speed-slider').value, 10)
   };
 
   // Save to chrome.storage.sync
@@ -85,17 +98,18 @@ document.getElementById('save').addEventListener('click', () => {
     const statusDiv = document.getElementById('status');
     if (chrome.runtime.lastError) {
       statusDiv.textContent = '❌ Error: ' + chrome.runtime.lastError.message;
-      statusDiv.style.color = 'red';
+      statusDiv.style.color = '#ef476f';
       statusDiv.style.background = '#ffebee';
     } else {
       statusDiv.textContent = '✅ Settings saved successfully!';
-      statusDiv.style.color = 'green';
+      statusDiv.style.color = '#06d6a0';
       statusDiv.style.background = '#e8f5e9';
-      // Auto-hide after 3 seconds
-      setTimeout(() => {
-        statusDiv.textContent = '';
-        statusDiv.style.background = 'none';
-      }, 3000);
     }
+    statusDiv.classList.add('show');
+
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+      statusDiv.classList.remove('show');
+    }, 3000);
   });
 });

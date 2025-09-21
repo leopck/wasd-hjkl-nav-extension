@@ -4,7 +4,9 @@
     'sites', 'modes',
     'behaviorSmooth', 'behaviorPageJump',
     'behaviorEdgePadding', 'behaviorHorizontal',
-    'pageJumpOverlap'
+    'pageJumpOverlap',
+    'smoothAcceleration',
+    'smoothMaxSpeed'
   ]);
 
   const {
@@ -14,7 +16,9 @@
     behaviorPageJump = false,
     behaviorEdgePadding = false,
     behaviorHorizontal = true,
-    pageJumpOverlap = 10 // default 10% overlap
+    pageJumpOverlap = 10,
+    smoothAcceleration = 0.7,
+    smoothMaxSpeed = 25
   } = config;
 
   const hostname = window.location.hostname;
@@ -112,8 +116,8 @@
   };
 
   const smoothConfig = {
-    acceleration: 0.7,
-    maxSpeed: 25,
+    acceleration: smoothAcceleration || 0.7,
+    maxSpeed: smoothMaxSpeed || 25,
     friction: 0.88,
     threshold: 0.15
   };

@@ -3,76 +3,233 @@
 <head>
   <title>WASD/HJKL Navigation Settings</title>
   <style>
+    :root {
+      --primary: #4361ee;
+      --success: #06d6a0;
+      --danger: #ef476f;
+      --dark: #2b2d42;
+      --light: #f8f9fa;
+      --gray: #adb5bd;
+    }
+
     body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-      line-height: 1.6;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #fafafa;
+      color: var(--dark);
+      margin: 0;
+      padding: 30px;
+      line-height: 1.7;
     }
-    h2, h3 {
-      color: #333;
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.05);
     }
+
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 5px;
+    }
+
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin: 30px 0 15px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #eee;
+      color: var(--dark);
+    }
+
+    h3 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin: 25px 0 12px;
+      color: var(--primary);
+    }
+
     textarea {
       width: 100%;
-      max-width: 500px;
-      padding: 8px;
-      margin-bottom: 15px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
+      height: 160px;
+      padding: 16px;
+      font-size: 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      resize: vertical;
+      font-family: inherit;
+      margin-bottom: 20px;
+      box-sizing: border-box;
     }
+
     label {
-      display: block;
-      margin: 8px 0;
-      font-weight: normal;
+      display: flex;
+      align-items: center;
+      margin: 14px 0;
+      font-size: 16px;
+      gap: 10px;
     }
+
     input[type="checkbox"] {
-      margin-right: 8px;
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
     }
+
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 16px 0;
+    }
+
     input[type="range"] {
-      vertical-align: middle;
+      width: 250px;
+      height: 8px;
+      border-radius: 4px;
+      background: #e9ecef;
+      outline: none;
+      -webkit-appearance: none;
     }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--primary);
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    .value-display {
+      min-width: 60px;
+      font-weight: 600;
+      font-size: 18px;
+      color: var(--primary);
+      text-align: center;
+      padding: 6px 12px;
+      background: #f0f4ff;
+      border-radius: 8px;
+    }
+
     button {
-      margin-top: 15px;
-      padding: 10px 20px;
-      background: #4CAF50;
+      margin-top: 30px;
+      padding: 16px 40px;
+      font-size: 18px;
+      font-weight: 600;
+      background: var(--success);
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: 12px;
       cursor: pointer;
-      font-size: 16px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px rgba(6, 214, 160, 0.3);
     }
+
     button:hover {
-      background: #45a049;
+      background: #05c18a;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(6, 214, 160, 0.4);
     }
+
+    button:active {
+      transform: translateY(0);
+    }
+
     #status {
-      margin-top: 15px;
-      padding: 8px;
-      border-radius: 4px;
+      margin-top: 25px;
+      padding: 16px;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 500;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    #status.show {
+      opacity: 1;
+    }
+
+    .section {
+      background: #f9fafb;
+      padding: 25px;
+      border-radius: 12px;
+      margin: 20px 0;
+      border: 1px solid #eaeaea;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 15px;
+      }
+      .container {
+        padding: 25px;
+      }
+      h1 {
+        font-size: 1.8rem;
+      }
+      textarea {
+        height: 140px;
+      }
+      input[type="range"] {
+        width: 180px;
+      }
     }
   </style>
 </head>
 <body>
-  <h2>Enabled Sites (one per line)</h2>
-  <textarea id="siteList" rows="6" cols="50" placeholder="example.com&#10;github.com"></textarea>
+  <div class="container">
+    <h1> WASD/HJKL Navigation</h1>
+    <p>Customize keyboard navigation for smoother browsing and manga reading.</p>
 
-  <h3>Enable Navigation Modes:</h3>
-  <label><input type="checkbox" id="mode-wasd"> WASD</label>
-  <label><input type="checkbox" id="mode-hjkl"> HJKL</label>
+    <div class="section">
+      <h2> Enabled Sites</h2>
+      <p>Enter one site per line (e.g., <code>mangadex.org</code> or <code>example.com</code>)</p>
+      <textarea id="siteList" placeholder="mangadex.org&#10;readmanganato.com&#10;example.com"></textarea>
+    </div>
 
-  <h3>Scrolling Behavior:</h3>
-  <label><input type="checkbox" id="behavior-smooth"> Smooth physics-based scrolling (hold keys to accelerate)</label>
-  <label><input type="checkbox" id="behavior-pagejump"> Page-jump scrolling (press once = one page up/down)</label>
-  <label><input type="checkbox" id="behavior-edgepadding"> Add edge padding (leave space at top/bottom)</label>
-  <label><input type="checkbox" id="behavior-horizontal"> Enable horizontal arrow keys (A/H → ←, D/L → →)</label>
+    <div class="section">
+      <h2> Navigation Modes</h2>
+      <label><input type="checkbox" id="mode-wasd"> <strong>WASD</strong> Gaming style (W S A D)</label>
+      <label><input type="checkbox" id="mode-hjkl"> <strong>HJKL</strong> Vim style (K J H L)</label>
+    </div>
 
-  <label>
-    Page Jump Overlap (%):
-    <input type="range" id="overlap-slider" min="0" max="30" value="10" step="1" style="width: 150px; vertical-align: middle;">
-    <span id="overlap-value">10%</span>
-  </label>
+    <div class="section">
+      <h2> Scrolling Behavior</h2>
 
-  <br />
-  <button id="save">💾 Save Settings</button>
-  <div id="status"></div>
+      <label><input type="checkbox" id="behavior-smooth"> <strong>Smooth Physics Scrolling</strong> Hold keys to accelerate</label>
+      <label><input type="checkbox" id="behavior-pagejump"> <strong>Page-Jump Scrolling</strong> Tap for page up/down</label>
+      <label><input type="checkbox" id="behavior-edgepadding"> <strong>Edge Padding</strong> Leave space at top/bottom</label>
+      <label><input type="checkbox" id="behavior-horizontal"> <strong>Horizontal Arrows</strong> A/H, D/L </label>
+
+      <div class="slider-container">
+        <label><strong>Page Jump Overlap:</strong></label>
+        <input type="range" id="overlap-slider" min="0" max="30" value="10" step="1">
+        <span id="overlap-value" class="value-display">10%</span>
+      </div>
+
+      <div class="slider-container">
+        <label><strong>Smooth Scroll Acceleration:</strong></label>
+        <input type="range" id="acceleration-slider" min="0.1" max="2.0" step="0.1" value="0.7">
+        <span id="acceleration-value" class="value-display">0.7</span>
+      </div>
+
+      <div class="slider-container">
+        <label><strong>Max Scroll Speed:</strong></label>
+        <input type="range" id="speed-slider" min="10" max="60" step="5" value="25">
+        <span id="speed-value" class="value-display">25</span>
+      </div>
+    </div>
+
+    <button id="save"> Save Settings</button>
+    <div id="status"></div>
+  </div>
 
   <script src="options.js"></script>
 </body>
