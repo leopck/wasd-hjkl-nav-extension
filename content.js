@@ -1,24 +1,15 @@
 (async () => {
-  // Load all user settings
+  // Load user settings
   const config = await chrome.storage.sync.get([
-    'sites', 'modes',
-    'behaviorSmooth', 'behaviorPageJump',
-    'behaviorEdgePadding', 'behaviorHorizontal',
-    'pageJumpOverlap',
-    'smoothAcceleration',
-    'smoothMaxSpeed'
+    'sites',
+    'modes',
+    'pageJumpOverlap'
   ]);
 
   const {
     sites = [],
     modes = [],
-    behaviorSmooth = true,
-    behaviorPageJump = false,
-    behaviorEdgePadding = false,
-    behaviorHorizontal = true,
-    pageJumpOverlap = 10,
-    smoothAcceleration = 0.7,
-    smoothMaxSpeed = 25
+    pageJumpOverlap = 10
   } = config;
 
   const hostname = window.location.hostname;
@@ -29,151 +20,150 @@
   );
 
   if (!isSiteEnabled) {
-    console.log('[WASD/HJKL EXT] Site not matched, skipping:', hostname);
+    console.log('[WASD/HJKL] Site not enabled:', hostname);
     return;
   }
 
-  console.log('[WASD/HJKL EXT] Matched site:', hostname);
-  console.log('[WASD/HJKL EXT] Config:', config);
+  console.log('[WASD/HJKL] Active on:', hostname);
 
   // ===== KEY MAPPINGS =====
   const scrollKeys = {};
   if (modes.includes('wasd')) {
-    scrollKeys['w'] = [0, -1]; // up
-    scrollKeys['s'] = [0, 1];  // down
-    if (behaviorHorizontal) {
-      scrollKeys['a'] = 'ArrowLeft';
-      scrollKeys['d'] = 'ArrowRight';
-    }
+    scrollKeys['w'] = 'up';
+    scrollKeys['s'] = 'down';
+    scrollKeys['a'] = 'prev';
+    scrollKeys['d'] = 'next';
   }
   if (modes.includes('hjkl')) {
-    scrollKeys['k'] = [0, -1]; // up
-    scrollKeys['j'] = [0, 1];  // down
-    if (behaviorHorizontal) {
-      scrollKeys['h'] = 'ArrowLeft';
-      scrollKeys['l'] = 'ArrowRight';
-    }
+    scrollKeys['k'] = 'up';
+    scrollKeys['j'] = 'down';
+    scrollKeys['h'] = 'prev';
+    scrollKeys['l'] = 'next';
   }
 
-  // ===== HELPER: Get scroll boundaries with optional padding =====
-  function getScrollLimits() {
-    const padding = behaviorEdgePadding ? window.innerHeight * 0.05 : 0; // 5% padding
-    return {
-      maxScrollY: Math.max(0, document.documentElement.scrollHeight - window.innerHeight - padding),
-      minScrollY: padding
-    };
-  }
-
-  // Clamp scroll position to respect padding
-  function clampScroll() {
-    const { minScrollY, maxScrollY } = getScrollLimits();
-    let y = window.scrollY;
-
-    if (y < minScrollY) window.scrollTo(window.scrollX, minScrollY);
-    else if (y > maxScrollY) window.scrollTo(window.scrollX, maxScrollY);
-  }
-
-  // ===== PAGE JUMP ENGINE =====
-  const pressedJumpKeys = new Set();
-
-  function handlePageJump(key) {
-    if (pressedJumpKeys.has(key)) return; // debounce: prevent multiple jumps while holding
-    pressedJumpKeys.add(key);
-
-    const direction = scrollKeys[key];
-    if (!Array.isArray(direction)) return;
-
-    // Calculate scroll amount with overlap
-    const overlapRatio = Math.min(1, Math.max(0, (pageJumpOverlap || 10) / 100)); // clamp 0-100%
-    const effectiveHeight = window.innerHeight * (1 - overlapRatio); // e.g., 90% if overlap=10%
-
-    const scrollAmount = direction[1] * effectiveHeight;
-    let targetY = window.scrollY + scrollAmount;
-
-    // Apply edge padding if enabled
-    if (behaviorEdgePadding) {
-      const { minScrollY, maxScrollY } = getScrollLimits();
-      targetY = Math.min(Math.max(targetY, minScrollY), maxScrollY);
-    } else {
-      // Basic document bounds clamp
-      const maxScrollY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      targetY = Math.min(Math.max(targetY, 0), maxScrollY);
-    }
-
-    // Animate scroll
-    window.scrollTo({
-      top: targetY,
-      behavior: 'smooth'
-    });
-  }
-
-  // ===== SMOOTH SCROLLING ENGINE =====
-  const smoothScrollState = {
-    velocity: { x: 0, y: 0 },
-    isScrolling: false,
-    keys: new Set(),
-    animationId: null
+  // ===== SMART NAVIGATION SYSTEM =====
+  const NAV_SELECTORS = {
+    next: [
+      // Specific manga sites
+      'a[title*="next" i]', 'a[aria-label*="next" i]',
+      'button[title*="next" i]', 'button[aria-label*="next" i]',
+      '.next-chapter', '.next-page', '#next', '.nextchap',
+      'a:has(img[alt*="next" i])',
+      // Generic patterns
+      'a[rel="next"]', 'link[rel="next"]',
+      'a[href*="next"]', 'a[href*="/next/"]',
+      'a.nav-next', 'a.chapter-next', 'button.next',
+      // Image-based navigation
+      'a > img[src*="next"]', 'a > img[alt*="next"]',
+      // Arrow symbols and text (must check manually)
+      'a', 'button'
+    ],
+    prev: [
+      // Specific manga sites
+      'a[title*="prev" i]', 'a[title*="previous" i]',
+      'a[aria-label*="prev" i]', 'a[aria-label*="previous" i]',
+      'button[title*="prev" i]', 'button[aria-label*="prev" i]',
+      '.prev-chapter', '.prev-page', '#prev', '.prevchap',
+      'a:has(img[alt*="prev" i])',
+      // Generic patterns
+      'a[rel="prev"]', 'link[rel="prev"]',
+      'a[href*="prev"]', 'a[href*="/prev/"]',
+      'a.nav-prev', 'a.chapter-prev', 'button.prev',
+      // Image-based navigation
+      'a > img[src*="prev"]', 'a > img[alt*="prev"]',
+      // Arrow symbols and text (must check manually)
+      'a', 'button'
+    ]
   };
 
-  const smoothConfig = {
-    acceleration: smoothAcceleration || 0.7,
-    maxSpeed: smoothMaxSpeed || 25,
-    friction: 0.88,
-    threshold: 0.15
-  };
-
-  function updateVelocity() {
-    smoothScrollState.keys.forEach(key => {
-      const move = scrollKeys[key];
-      if (Array.isArray(move)) {
-        smoothScrollState.velocity.x += move[0] * smoothConfig.acceleration;
-        smoothScrollState.velocity.y += move[1] * smoothConfig.acceleration;
+  function findElement(selectors, direction) {
+    // First try specific selectors
+    for (let i = 0; i < selectors.length - 2; i++) {
+      const selector = selectors[i];
+      try {
+        const element = document.querySelector(selector);
+        if (element && isElementVisible(element)) {
+          return element;
+        }
+      } catch (e) {
+        continue;
       }
+    }
+    
+    // Last resort: search all links/buttons for text content
+    const searchTerms = direction === 'next' 
+      ? ['next', '→', '»', '>', 'siguiente', '次']
+      : ['prev', 'previous', '←', '«', '<', 'anterior', '前'];
+    
+    const elements = document.querySelectorAll('a, button');
+    for (const el of elements) {
+      if (!isElementVisible(el)) continue;
+      
+      const text = el.textContent.toLowerCase().trim();
+      const title = (el.getAttribute('title') || '').toLowerCase();
+      const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+      
+      for (const term of searchTerms) {
+        if (text.includes(term) || title.includes(term) || ariaLabel.includes(term)) {
+          return el;
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  function isElementVisible(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    return rect.width > 0 && 
+           rect.height > 0 && 
+           style.display !== 'none' && 
+           style.visibility !== 'hidden' &&
+           style.opacity !== '0';
+  }
+
+  function navigatePage(direction) {
+    const selectors = NAV_SELECTORS[direction];
+    const element = findElement(selectors, direction);
+    
+    if (element) {
+      console.log(`[WASD/HJKL] Navigating ${direction}:`, element);
+      try {
+        element.click();
+        return true;
+      } catch (e) {
+        if (element.tagName === 'A' && element.href) {
+          window.location.href = element.href;
+          return true;
+        }
+      }
+    }
+    
+    console.warn(`[WASD/HJKL] No ${direction} button found`);
+    return false;
+  }
+
+  // ===== PAGE JUMP =====
+  function jumpPage(direction) {
+    // Calculate overlap
+    const overlapRatio = Math.min(1, Math.max(0, pageJumpOverlap / 100));
+    const effectiveHeight = window.innerHeight * (1 - overlapRatio);
+    
+    // Calculate scroll amount
+    const scrollAmount = direction === 'down' ? effectiveHeight : -effectiveHeight;
+    const targetY = window.scrollY + scrollAmount;
+    
+    // Clamp to document bounds
+    const maxScrollY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    const finalY = Math.min(Math.max(targetY, 0), maxScrollY);
+    
+    // Jump instantly - no smooth animation
+    window.scrollTo({
+      top: finalY,
+      behavior: 'instant'
     });
-
-    // Cap speed
-    const speed = Math.hypot(smoothScrollState.velocity.x, smoothScrollState.velocity.y);
-    if (speed > smoothConfig.maxSpeed) {
-      const scale = smoothConfig.maxSpeed / speed;
-      smoothScrollState.velocity.x *= scale;
-      smoothScrollState.velocity.y *= scale;
-    }
-  }
-
-  function animateSmoothScroll() {
-    if (smoothScrollState.keys.size > 0) {
-      updateVelocity();
-    } else {
-      smoothScrollState.velocity.x *= smoothConfig.friction;
-      smoothScrollState.velocity.y *= smoothConfig.friction;
-    }
-
-    // Stop if negligible
-    if (Math.abs(smoothScrollState.velocity.x) < smoothConfig.threshold &&
-        Math.abs(smoothScrollState.velocity.y) < smoothConfig.threshold &&
-        smoothScrollState.keys.size === 0) {
-      smoothScrollState.velocity.x = 0;
-      smoothScrollState.velocity.y = 0;
-      smoothScrollState.isScrolling = false;
-      cancelAnimationFrame(smoothScrollState.animationId);
-      return;
-    }
-
-    window.scrollBy(smoothScrollState.velocity.x, smoothScrollState.velocity.y);
-
-    // Apply edge padding during smooth scroll
-    if (behaviorEdgePadding) {
-      clampScroll();
-    }
-
-    smoothScrollState.animationId = requestAnimationFrame(animateSmoothScroll);
-  }
-
-  function startSmoothScrolling() {
-    if (!smoothScrollState.isScrolling) {
-      smoothScrollState.isScrolling = true;
-      animateSmoothScroll();
-    }
   }
 
   // ===== EVENT HANDLERS =====
@@ -188,82 +178,22 @@
     const action = scrollKeys[e.key.toLowerCase()];
     if (!action) return;
 
-    // === HANDLE ARROW KEYS (A/D/H/L → ArrowLeft/ArrowRight) ===
-    if (typeof action === 'string') {
-      e.preventDefault();
-      e.stopPropagation(); // Prevent site from handling original key
+    e.preventDefault();
 
-      const arrowKey = action; // "ArrowLeft" or "ArrowRight"
-      const keyCode = arrowKey === 'ArrowLeft' ? 37 : 39;
-
-      // Create and dispatch keydown
-      const keydownEvent = new KeyboardEvent('keydown', {
-        key: arrowKey,
-        code: arrowKey,
-        keyCode: keyCode,
-        which: keyCode,
-        bubbles: true,
-        cancelable: true
-      });
-      document.dispatchEvent(keydownEvent);
-
-      // Dispatch keyup after a tiny delay (mimic real key press)
-      setTimeout(() => {
-        const keyupEvent = new KeyboardEvent('keyup', {
-          key: arrowKey,
-          code: arrowKey,
-          keyCode: keyCode,
-          which: keyCode,
-          bubbles: true,
-          cancelable: true
-        });
-        document.dispatchEvent(keyupEvent);
-      }, 50); // 50ms delay — feels natural
-
+    // Handle navigation (A/D or H/L)
+    if (action === 'prev' || action === 'next') {
+      navigatePage(action);
       return;
     }
 
-    // === HANDLE SCROLL KEYS (W/S/K/J) ===
-    e.preventDefault();
-
-    // Page Jump Mode
-    if (behaviorPageJump) {
-      handlePageJump(e.key.toLowerCase());
-    }
-
-    // Smooth Mode
-    if (behaviorSmooth) {
-      const key = e.key.toLowerCase();
-      if (!smoothScrollState.keys.has(key)) {
-        smoothScrollState.keys.add(key);
-        startSmoothScrolling();
-      }
+    // Handle page jumping (W/S or K/J)
+    if (action === 'up' || action === 'down') {
+      jumpPage(action);
     }
   }
 
-  function handleKeyUp(e) {
-    const key = e.key.toLowerCase();
-    pressedJumpKeys.delete(key); // release jump key
-
-    if (behaviorSmooth) {
-      smoothScrollState.keys.delete(key); // release smooth key
-    }
-  }
-
-  // ===== INIT & CLEANUP =====
+  // ===== INITIALIZE =====
   document.addEventListener('keydown', handleKeyDown);
-  document.addEventListener('keyup', handleKeyUp);
 
-  // Cleanup on page unload
-  window.addEventListener('beforeunload', () => {
-    if (smoothScrollState.animationId) {
-      cancelAnimationFrame(smoothScrollState.animationId);
-    }
-  });
-
-  // Initial clamp if edge padding is on
-  if (behaviorEdgePadding) {
-    clampScroll();
-  }
-
+  console.log('[WASD/HJKL] Initialized - Page overlap:', pageJumpOverlap + '%');
 })();

@@ -2,23 +2,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const {
     sites = [],
     modes = [],
-    behaviorSmooth = true,
-    behaviorPageJump = false,
-    behaviorEdgePadding = false,
-    behaviorHorizontal = true,
-    pageJumpOverlap = 10,
-    smoothAcceleration = 0.7,
-    smoothMaxSpeed = 25
+    pageJumpOverlap = 10
   } = await chrome.storage.sync.get([
     'sites',
     'modes',
-    'behaviorSmooth',
-    'behaviorPageJump',
-    'behaviorEdgePadding',
-    'behaviorHorizontal',
-    'pageJumpOverlap',
-    'smoothAcceleration',
-    'smoothMaxSpeed'
+    'pageJumpOverlap'
   ]);
 
   // Populate sites
@@ -28,29 +16,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('mode-wasd').checked = modes.includes('wasd');
   document.getElementById('mode-hjkl').checked = modes.includes('hjkl');
 
-  // Populate behaviors
-  document.getElementById('behavior-smooth').checked = behaviorSmooth;
-  document.getElementById('behavior-pagejump').checked = behaviorPageJump;
-  document.getElementById('behavior-edgepadding').checked = behaviorEdgePadding;
-  document.getElementById('behavior-horizontal').checked = behaviorHorizontal;
+  // Setup slider
+  const slider = document.getElementById('overlap-slider');
+  const display = document.getElementById('overlap-value');
+  slider.value = pageJumpOverlap;
+  display.textContent = pageJumpOverlap + '%';
 
-  // Helper to setup slider + display
-  function setupSlider(sliderId, valueId, value, unit = '') {
-    const slider = document.getElementById(sliderId);
-    const display = document.getElementById(valueId);
-    slider.value = value;
-    display.textContent = value + unit;
-
-    slider.addEventListener('input', () => {
-      display.textContent = slider.value + unit;
-    });
-  }
-
-  // Setup all sliders
-  setupSlider('overlap-slider', 'overlap-value', pageJumpOverlap, '%');
-  setupSlider('acceleration-slider', 'acceleration-value', smoothAcceleration);
-  setupSlider('speed-slider', 'speed-value', smoothMaxSpeed);
-
+  slider.addEventListener('input', () => {
+    display.textContent = slider.value + '%';
+  });
 });
 
 document.getElementById('save').addEventListener('click', () => {
@@ -84,13 +58,7 @@ document.getElementById('save').addEventListener('click', () => {
   const settings = {
     sites: [...siteSet],
     modes,
-    behaviorSmooth: document.getElementById('behavior-smooth').checked,
-    behaviorPageJump: document.getElementById('behavior-pagejump').checked,
-    behaviorEdgePadding: document.getElementById('behavior-edgepadding').checked,
-    behaviorHorizontal: document.getElementById('behavior-horizontal').checked,
-    pageJumpOverlap: parseInt(document.getElementById('overlap-slider').value, 10),
-    smoothAcceleration: parseFloat(document.getElementById('acceleration-slider').value),
-    smoothMaxSpeed: parseInt(document.getElementById('speed-slider').value, 10)
+    pageJumpOverlap: parseInt(document.getElementById('overlap-slider').value, 10)
   };
 
   // Save to chrome.storage.sync
